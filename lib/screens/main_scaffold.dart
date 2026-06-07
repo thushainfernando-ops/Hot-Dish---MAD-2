@@ -1,7 +1,11 @@
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' as riverpod;
 import 'package:provider/provider.dart';
 import 'package:badges/badges.dart' as badges;
 import '../providers/app_provider.dart';
+import '../providers/menu_provider.dart';
+import '../providers/connectivity_provider.dart';
 import 'home_screen.dart';
 import 'menu_screen.dart';
 import 'cart_screen.dart';
@@ -19,6 +23,8 @@ class MainScaffold extends StatefulWidget {
 class _MainScaffoldState extends State<MainScaffold> {
   int _currentIndex = 0;
   late PageController _pageController;
+  AppProvider? _appProvider;
+  bool _providerListenerAdded = false;
 
   final List<Widget> _screens = const [
     HomeScreen(),
@@ -32,28 +38,39 @@ class _MainScaffoldState extends State<MainScaffold> {
   void initState() {
     super.initState();
     _pageController = PageController();
-    // Load cart when scaffold initializes
+    // Load user profile and cart when scaffold initializes
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       final provider = Provider.of<AppProvider>(context, listen: false);
+      _appProvider = provider;
+      provider.fetchProfile();
       provider.fetchCart();
+      // prefetch menu so navigation feels faster
+      try {
+        riverpod.ProviderScope.containerOf(
+          context,
+          listen: false,
+        ).read(menuProvider.notifier).loadMenu();
+      } catch (_) {}
       // listen for programmatic navigation requests
       provider.addListener(_providerNavigationListener);
+      _providerListenerAdded = true;
     });
   }
 
   @override
   void dispose() {
-    // remove provider listener if exists
-    try {
-      final provider = Provider.of<AppProvider>(context, listen: false);
-      provider.removeListener(_providerNavigationListener);
-    } catch (_) {}
+    if (_providerListenerAdded && _appProvider != null) {
+      _appProvider!.removeListener(_providerNavigationListener);
+    }
     _pageController.dispose();
     super.dispose();
   }
 
   void _providerNavigationListener() {
-    final provider = Provider.of<AppProvider>(context, listen: false);
+    if (!mounted) return;
+    final provider = _appProvider;
+    if (provider == null) return;
     final idx = provider.selectedIndex;
     if (idx != _currentIndex) {
       _onDestinationSelected(idx);
@@ -76,11 +93,48 @@ class _MainScaffoldState extends State<MainScaffold> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      body: PageView(
-        controller: _pageController,
-        onPageChanged: (index) => setState(() => _currentIndex = index),
-        children: _screens,
+      body: Column(
+        children: [
+          riverpod.Consumer(
+            builder: (context, ref, child) {
+              final connectivity = ref.watch(connectivityProvider);
+              return connectivity.when(
+                data: (status) {
+                  if (status == ConnectivityResult.none) {
+                    return Container(
+                      width: double.infinity,
+                      color: theme.colorScheme.errorContainer,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      child: Text(
+                        'Offline mode: showing cached data where available',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onErrorContainer,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+                loading: () => const SizedBox.shrink(),
+                error: (_, __) => const SizedBox.shrink(),
+              );
+            },
+          ),
+          Expanded(
+            child: PageView(
+              controller: _pageController,
+              onPageChanged: (index) => setState(() => _currentIndex = index),
+              children: _screens,
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: Consumer<AppProvider>(
         builder: (context, provider, child) {

@@ -59,10 +59,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
       if (success) {
         Navigator.pushReplacementNamed(context, '/order-success');
       } else {
+        final theme = Theme.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Payment failed. Please try again.'),
-            backgroundColor: Colors.red,
+          SnackBar(
+            content: const Text('Payment failed. Please try again.'),
+            backgroundColor: theme.colorScheme.error,
           ),
         );
       }
@@ -155,10 +156,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         // Card Number
                         TextFormField(
                           controller: _cardNumberController,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'Card Number',
                             hintText: '1234 5678 9012 3456',
-                            prefixIcon: Icon(Icons.credit_card),
+                            prefixIcon: const Icon(Icons.credit_card),
+                            filled: true,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                           keyboardType: TextInputType.number,
                           inputFormatters: [
@@ -174,6 +179,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             if (digits.length < 13 || digits.length > 19) {
                               return 'Invalid card number';
                             }
+                            if (!_luhnCheck(digits)) {
+                              return 'Invalid card number';
+                            }
                             return null;
                           },
                         ),
@@ -185,10 +193,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             Expanded(
                               child: TextFormField(
                                 controller: _expiryController,
-                                decoration: const InputDecoration(
+                                decoration: InputDecoration(
                                   labelText: 'Expiry Date',
                                   hintText: 'MM/YY',
-                                  prefixIcon: Icon(Icons.calendar_today),
+                                  prefixIcon: const Icon(Icons.calendar_today),
+                                  filled: true,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
                                 ),
                                 keyboardType: TextInputType.number,
                                 inputFormatters: [
@@ -207,8 +219,22 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   }
                                   final parts = value.split('/');
                                   final month = int.parse(parts[0]);
+                                  final year = int.parse(parts[1]);
                                   if (month < 1 || month > 12) {
                                     return 'Invalid month';
+                                  }
+                                  // Convert YY to 2000+YY (assume cards won't be > 2100)
+                                  final fourYear = 2000 + year;
+                                  final lastDay = DateTime(
+                                    fourYear,
+                                    month + 1,
+                                    0,
+                                  );
+                                  final now = DateTime.now();
+                                  if (lastDay.isBefore(
+                                    DateTime(now.year, now.month, 1),
+                                  )) {
+                                    return 'Card expired';
                                   }
                                   return null;
                                 },
@@ -218,10 +244,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             Expanded(
                               child: TextFormField(
                                 controller: _cvvController,
-                                decoration: const InputDecoration(
+                                decoration: InputDecoration(
                                   labelText: 'CVV',
                                   hintText: '123',
-                                  prefixIcon: Icon(Icons.lock),
+                                  prefixIcon: const Icon(Icons.lock),
+                                  filled: true,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
                                 ),
                                 keyboardType: TextInputType.number,
                                 obscureText: true,
@@ -247,10 +277,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         // Card Holder Name
                         TextFormField(
                           controller: _cardHolderController,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'Card Holder Name',
                             hintText: 'JOHN DOE',
-                            prefixIcon: Icon(Icons.person),
+                            prefixIcon: const Icon(Icons.person),
+                            filled: true,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                           textCapitalization: TextCapitalization.characters,
                           validator: (value) {
@@ -277,11 +311,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     onPressed: _isProcessing ? null : _processPayment,
                     child:
                         _isProcessing
-                            ? const SizedBox(
+                            ? SizedBox(
                               width: 24,
                               height: 24,
                               child: CircularProgressIndicator(
-                                color: Colors.white,
+                                color: theme.colorScheme.onPrimary,
                                 strokeWidth: 2,
                               ),
                             )
@@ -299,7 +333,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.lock, size: 16, color: Colors.grey),
+                      Icon(
+                        Icons.lock,
+                        size: 16,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         'Your payment information is secure',
@@ -346,6 +384,21 @@ class _PaymentScreenState extends State<PaymentScreen> {
       ],
     );
   }
+}
+
+bool _luhnCheck(String digits) {
+  int sum = 0;
+  bool alternate = false;
+  for (int i = digits.length - 1; i >= 0; i--) {
+    int n = int.parse(digits[i]);
+    if (alternate) {
+      n *= 2;
+      if (n > 9) n -= 9;
+    }
+    sum += n;
+    alternate = !alternate;
+  }
+  return sum % 10 == 0;
 }
 
 // Card Number Formatter (adds spaces every 4 digits)

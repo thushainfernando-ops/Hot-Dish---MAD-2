@@ -1,18 +1,22 @@
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart' as p;
+import '../providers/menu_provider.dart';
 import '../providers/app_provider.dart';
+import '../providers/connectivity_provider.dart';
 import '../models/app_models.dart';
 import '../utils/constants.dart';
 import 'menu_detail_screen.dart';
 
-class MenuScreen extends StatefulWidget {
+class MenuScreen extends ConsumerStatefulWidget {
   const MenuScreen({super.key});
 
   @override
-  State<MenuScreen> createState() => _MenuScreenState();
+  ConsumerState<MenuScreen> createState() => _MenuScreenState();
 }
 
-class _MenuScreenState extends State<MenuScreen> {
+class _MenuScreenState extends ConsumerState<MenuScreen> {
   int _selectedIndex = 0;
   late PageController _pageController;
 
@@ -31,9 +35,19 @@ class _MenuScreenState extends State<MenuScreen> {
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: 0);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<AppProvider>(context, listen: false).fetchMenu();
+    Future.microtask(() async {
+      final message = await ref.read(menuProvider.notifier).loadMenu();
+      if (!mounted) return;
+      _showMenuSnackbar(message);
     });
+  }
+
+  void _showMenuSnackbar(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.removeCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+    );
   }
 
   List<Product> _getFilteredItems(
@@ -46,129 +60,258 @@ class _MenuScreenState extends State<MenuScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final isLandscape =
         MediaQuery.of(context).orientation == Orientation.landscape;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Our Menu')),
-      body: Consumer<AppProvider>(
-        builder: (context, provider, child) {
-          if (provider.isLoading) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (provider.menuItems.isEmpty) {
-            return const Center(child: Text('No menu items available.'));
-          }
+      appBar: AppBar(
+        title: const Text('Our Menu'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () async {
+              final message = await ref.read(menuProvider.notifier).loadMenu();
+              if (!mounted) return;
+              _showMenuSnackbar(message);
+            },
+            tooltip: 'Refresh menu',
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          ref
+              .watch(connectivityProvider)
+              .when(
+                data: (status) {
+                  if (status == ConnectivityResult.none) {
+                    return Container(
+                      width: double.infinity,
+                      color: theme.colorScheme.secondaryContainer,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      child: Text(
+                        'Offline: using cached/local menu data',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSecondaryContainer,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+                loading: () => const SizedBox.shrink(),
+                error: (_, __) => const SizedBox.shrink(),
+              ),
+          Expanded(
+            child: ref
+                .watch(menuProvider)
+                .when(
+                  data: (menuItems) {
+                    if (menuItems.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Text('No menu items available.'),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: () async {
+                                final message =
+                                    await ref
+                                        .read(menuProvider.notifier)
+                                        .loadMenu();
+                                if (!mounted) return;
+                                _showMenuSnackbar(message);
+                              },
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
 
-          // Build categories dynamically from available menu items
-          final Set<String> categorySet = {'all'};
-          for (final p in provider.menuItems) {
-            if (p.category != null && p.category!.trim().isNotEmpty) {
-              categorySet.add(p.category!.trim());
-            }
-          }
-          final categories = categorySet.toList();
+                    final Set<String> categorySet = {'all'};
+                    for (final p in menuItems) {
+                      if (p.category != null && p.category!.trim().isNotEmpty) {
+                        categorySet.add(p.category!.trim());
+                      }
+                    }
+                    final categories = categorySet.toList();
 
-          String displayName(String key) {
-            if (_categoryDisplayNames.containsKey(key)) {
-              return _categoryDisplayNames[key]!;
-            }
-            return key
-                .replaceAll('-', ' ')
-                .replaceAll('_', ' ')
-                .split(' ')
-                .map(
-                  (w) =>
-                      w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}',
-                )
-                .join(' ');
-          }
+                    String displayName(String key) {
+                      if (_categoryDisplayNames.containsKey(key)) {
+                        return _categoryDisplayNames[key]!;
+                      }
+                      return key
+                          .replaceAll('-', ' ')
+                          .replaceAll('_', ' ')
+                          .split(' ')
+                          .map(
+                            (w) =>
+                                w.isEmpty
+                                    ? w
+                                    : '${w[0].toUpperCase()}${w.substring(1)}',
+                          )
+                          .join(' ');
+                    }
 
-          return Column(
-            children: [
-              // Category chips (horizontal)
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                child: Row(
-                  children: List.generate(categories.length, (i) {
-                    final catKey = categories[i];
-                    final isSelected = _selectedIndex == i;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: FilterChip(
-                        label: Text(
-                          displayName(catKey),
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color:
-                                isSelected ? Colors.white : AppColors.darkBlue,
+                    return Column(
+                      children: [
+                        // Category chips (horizontal)
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          child: Row(
+                            children: List.generate(categories.length, (i) {
+                              final catKey = categories[i];
+                              final isSelected = _selectedIndex == i;
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: FilterChip(
+                                  label: Text(
+                                    displayName(catKey),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color:
+                                          isSelected
+                                              ? theme.colorScheme.onPrimary
+                                              : theme.colorScheme.onSurface,
+                                    ),
+                                  ),
+                                  selected: isSelected,
+                                  onSelected: (_) {
+                                    setState(() => _selectedIndex = i);
+                                    _pageController.animateToPage(
+                                      i,
+                                      duration: const Duration(
+                                        milliseconds: 300,
+                                      ),
+                                      curve: Curves.easeInOut,
+                                    );
+                                  },
+                                  backgroundColor:
+                                      theme.colorScheme.surfaceContainerHighest,
+                                  selectedColor: AppColors.primaryOrange,
+                                  side: BorderSide(
+                                    color:
+                                        isSelected
+                                            ? AppColors.primaryOrange
+                                            : theme.colorScheme.outline,
+                                  ),
+                                ),
+                              );
+                            }),
                           ),
                         ),
-                        selected: isSelected,
-                        onSelected: (_) {
-                          setState(() => _selectedIndex = i);
-                          _pageController.animateToPage(
-                            i,
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeInOut,
-                          );
-                        },
-                        backgroundColor: Colors.grey[100],
-                        selectedColor: AppColors.primaryOrange,
-                        side: BorderSide(
-                          color:
-                              isSelected
-                                  ? AppColors.primaryOrange
-                                  : Colors.grey[300]!,
-                        ),
-                      ),
-                    );
-                  }),
-                ),
-              ),
 
-              // PageView: horizontal swipe between categories; each page has a vertical GridView
-              Expanded(
-                child: PageView.builder(
-                  controller: _pageController,
-                  itemCount: categories.length,
-                  onPageChanged:
-                      (index) => setState(() => _selectedIndex = index),
-                  itemBuilder: (context, pageIndex) {
-                    final catKey = categories[pageIndex];
-                    final items = _getFilteredItems(provider.menuItems, catKey);
-                    return GridView.builder(
-                      padding: const EdgeInsets.all(16),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: isLandscape ? 4 : 2,
-                        childAspectRatio: isLandscape ? 0.65 : 0.7,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                      ),
-                      itemCount: items.length,
-                      itemBuilder:
-                          (context, index) =>
-                              _buildMenuCard(context, items[index], provider),
+                        // PageView: horizontal swipe between categories; each page has a vertical GridView
+                        Expanded(
+                          child: PageView.builder(
+                            controller: _pageController,
+                            itemCount: categories.length,
+                            onPageChanged:
+                                (index) =>
+                                    setState(() => _selectedIndex = index),
+                            itemBuilder: (context, pageIndex) {
+                              final catKey = categories[pageIndex];
+                              final items = _getFilteredItems(
+                                menuItems,
+                                catKey,
+                              );
+                              if (items.isEmpty) {
+                                return Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Text('No items in this category.'),
+                                      const SizedBox(height: 16),
+                                      ElevatedButton(
+                                        onPressed: () async {
+                                          final message =
+                                              await ref
+                                                  .read(menuProvider.notifier)
+                                                  .loadMenu();
+                                          if (!mounted) return;
+                                          _showMenuSnackbar(message);
+                                        },
+                                        child: const Text('Refresh Menu'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }
+                              return GridView.builder(
+                                padding: const EdgeInsets.all(16),
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: isLandscape ? 4 : 2,
+                                      childAspectRatio:
+                                          isLandscape ? 0.65 : 0.7,
+                                      crossAxisSpacing: 12,
+                                      mainAxisSpacing: 12,
+                                    ),
+                                itemCount: items.length,
+                                itemBuilder:
+                                    (context, index) =>
+                                        _buildMenuCard(context, items[index]),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                     );
                   },
+                  loading:
+                      () => const Center(child: CircularProgressIndicator()),
+                  error:
+                      (error, stack) => Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'Failed to load menu',
+                              style: theme.textTheme.titleLarge,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              error.toString(),
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: () async {
+                                final message =
+                                    await ref
+                                        .read(menuProvider.notifier)
+                                        .loadMenu();
+                                if (!mounted) return;
+                                _showMenuSnackbar(message);
+                              },
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      ),
                 ),
-              ),
-            ],
-          );
-        },
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildMenuCard(
-    BuildContext context,
-    Product product,
-    AppProvider provider,
-  ) {
+  Widget _buildMenuCard(BuildContext context, Product product) {
+    final theme = Theme.of(context);
+
     return InkWell(
       onTap: () {
         Navigator.push(
@@ -178,11 +321,11 @@ class _MenuScreenState extends State<MenuScreen> {
       },
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: theme.cardColor,
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withAlpha((0.08 * 255).round()),
+              color: theme.shadowColor.withAlpha((0.08 * 255).round()),
               blurRadius: 4,
               offset: const Offset(0, 2),
             ),
@@ -208,8 +351,12 @@ class _MenuScreenState extends State<MenuScreen> {
                           fit: BoxFit.cover,
                           errorBuilder:
                               (context, error, stackTrace) => Container(
-                                color: Colors.grey[300],
-                                child: const Icon(Icons.broken_image),
+                                color:
+                                    theme.colorScheme.surfaceContainerHighest,
+                                child: Icon(
+                                  Icons.broken_image,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
                               ),
                         ),
                       );
@@ -223,8 +370,12 @@ class _MenuScreenState extends State<MenuScreen> {
                           fit: BoxFit.cover,
                           errorBuilder:
                               (context, error, stackTrace) => Container(
-                                color: Colors.grey[300],
-                                child: const Icon(Icons.fastfood),
+                                color:
+                                    theme.colorScheme.surfaceContainerHighest,
+                                child: Icon(
+                                  Icons.fastfood,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
                               ),
                         ),
                       );
@@ -242,20 +393,16 @@ class _MenuScreenState extends State<MenuScreen> {
                   children: [
                     Text(
                       product.name,
-                      style: const TextStyle(
+                      style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
-                        color: AppColors.darkBlue,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
                       product.description,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: AppColors.textLight,
-                      ),
+                      style: theme.textTheme.bodySmall,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -271,40 +418,52 @@ class _MenuScreenState extends State<MenuScreen> {
                             color: AppColors.primaryOrange,
                           ),
                         ),
-                        SizedBox(
-                          height: 28,
-                          width: 28,
-                          child: ElevatedButton(
-                            onPressed: () async {
-                              final success = await provider.addToCart(
-                                product,
-                                1,
-                              );
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      success
-                                          ? 'Added to cart'
-                                          : 'Failed to add',
-                                    ),
-                                    backgroundColor:
-                                        success ? Colors.green : Colors.red,
-                                    duration: const Duration(milliseconds: 800),
-                                  ),
-                                );
-                              }
-                            },
-                            style: ElevatedButton.styleFrom(
-                              padding: EdgeInsets.zero,
-                              backgroundColor: AppColors.primaryOrange,
+                        Row(
+                          children: [
+                            SizedBox(
+                              height: 28,
+                              width: 28,
+                              child: ElevatedButton(
+                                onPressed: () async {
+                                  final provider = p.Provider.of<AppProvider>(
+                                    context,
+                                    listen: false,
+                                  );
+                                  final success = await provider.addToCart(
+                                    product,
+                                    1,
+                                  );
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          success
+                                              ? 'Added to cart'
+                                              : 'Failed to add',
+                                        ),
+                                        backgroundColor:
+                                            success
+                                                ? theme.colorScheme.secondary
+                                                : theme.colorScheme.error,
+                                        duration: const Duration(
+                                          milliseconds: 800,
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  backgroundColor: AppColors.primaryOrange,
+                                ),
+                                child: Icon(
+                                  Icons.add,
+                                  size: 16,
+                                  color: theme.colorScheme.onPrimary,
+                                ),
+                              ),
                             ),
-                            child: const Icon(
-                              Icons.add,
-                              size: 16,
-                              color: Colors.white,
-                            ),
-                          ),
+                          ],
                         ),
                       ],
                     ),

@@ -1,7 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../providers/app_provider.dart';
-import '../utils/constants.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,16 +17,29 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
+  String? _errorText;
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
+    bool success = false;
     final provider = Provider.of<AppProvider>(context, listen: false);
-    final success = await provider.login(
-      _emailController.text,
-      _passwordController.text,
-    );
+    try {
+      final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
+      if (cred.user != null) {
+        provider.setSelectedIndex(0);
+        unawaited(provider.fetchProfile(uid: cred.user!.uid));
+        unawaited(provider.fetchCart());
+        success = true;
+      }
+    } catch (e) {
+      success = false;
+      _errorText = e.toString();
+    }
 
     setState(() => _isLoading = false);
 
@@ -33,7 +48,11 @@ class _LoginScreenState extends State<LoginScreen> {
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(provider.errorMessage ?? 'Login failed')),
+          SnackBar(
+            content: Text(
+              'Login failed: ${_errorText ?? provider.errorMessage ?? 'Please check credentials'}',
+            ),
+          ),
         );
       }
     }
@@ -59,10 +78,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
-                    color:
-                        theme.brightness == Brightness.dark
-                            ? Colors.white
-                            : AppColors.darkBlue,
+                    color: theme.colorScheme.onSurface,
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -70,9 +86,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Email Address',
-                    prefixIcon: Icon(Icons.email),
+                    prefixIcon: const Icon(Icons.email),
+                    filled: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   validator:
                       (value) => value!.isEmpty ? 'Please enter email' : null,
@@ -81,9 +101,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 TextFormField(
                   controller: _passwordController,
                   obscureText: true,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Password',
-                    prefixIcon: Icon(Icons.lock),
+                    prefixIcon: const Icon(Icons.lock),
+                    filled: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   validator:
                       (value) =>
@@ -96,8 +120,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: _isLoading ? null : _login,
                     child:
                         _isLoading
-                            ? const CircularProgressIndicator(
-                              color: Colors.white,
+                            ? CircularProgressIndicator(
+                              color: theme.colorScheme.onPrimary,
                             )
                             : const Text('Login'),
                   ),
@@ -109,12 +133,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   },
                   child: Text(
                     'Don\'t have an account? Register',
-                    style: TextStyle(
-                      color:
-                          theme.brightness == Brightness.dark
-                              ? AppColors.primaryOrange
-                              : AppColors.darkBlue,
-                    ),
+                    style: TextStyle(color: theme.colorScheme.primary),
                   ),
                 ),
               ],

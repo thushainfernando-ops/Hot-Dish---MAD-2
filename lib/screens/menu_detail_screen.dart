@@ -120,7 +120,9 @@ class _MenuDetailScreenState extends State<MenuDetailScreen>
                               color:
                                   index < 4
                                       ? Colors.amber
-                                      : Colors.grey.shade300,
+                                      : theme
+                                          .colorScheme
+                                          .surfaceContainerHighest,
                               size: 20,
                             ),
                           ),
@@ -178,7 +180,7 @@ class _MenuDetailScreenState extends State<MenuDetailScreen>
                             height: 40,
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
-                              border: Border.all(color: Colors.grey.shade300),
+                              border: Border.all(color: theme.dividerColor),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
@@ -220,7 +222,9 @@ class _MenuDetailScreenState extends State<MenuDetailScreen>
                                         : 'Failed to add to cart',
                                   ),
                                   backgroundColor:
-                                      success ? Colors.green : Colors.red,
+                                      success
+                                          ? theme.colorScheme.secondary
+                                          : theme.colorScheme.error,
                                   behavior: SnackBarBehavior.floating,
                                   duration: const Duration(seconds: 2),
                                 ),
@@ -248,6 +252,7 @@ class _MenuDetailScreenState extends State<MenuDetailScreen>
   }
 
   Widget _buildImage(bool isDark) {
+    final theme = Theme.of(context);
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -259,7 +264,7 @@ class _MenuDetailScreenState extends State<MenuDetailScreen>
                 fit: BoxFit.cover,
                 errorBuilder:
                     (context, error, stackTrace) => Container(
-                      color: Colors.grey[300],
+                      color: theme.colorScheme.surfaceContainerHighest,
                       child: const Icon(Icons.broken_image, size: 80),
                     ),
               );
@@ -269,7 +274,7 @@ class _MenuDetailScreenState extends State<MenuDetailScreen>
                 fit: BoxFit.cover,
                 errorBuilder:
                     (context, error, stackTrace) => Container(
-                      color: Colors.grey[300],
+                      color: theme.colorScheme.surfaceContainerHighest,
                       child: const Icon(Icons.fastfood, size: 80),
                     ),
               );
@@ -283,7 +288,7 @@ class _MenuDetailScreenState extends State<MenuDetailScreen>
               end: Alignment.bottomCenter,
               colors: [
                 Colors.transparent,
-                Colors.black.withAlpha((0.7 * 255).round()),
+                theme.colorScheme.onSurface.withAlpha((0.7 * 255).round()),
               ],
             ),
           ),
@@ -293,10 +298,11 @@ class _MenuDetailScreenState extends State<MenuDetailScreen>
   }
 
   Widget _buildIngredientChip(String label, bool isDark) {
+    final theme = Theme.of(context);
     return Chip(
       label: Text(label),
-      backgroundColor: isDark ? const Color(0xFF374151) : Colors.grey.shade100,
-      labelStyle: TextStyle(color: isDark ? Colors.white : AppColors.textDark),
+      backgroundColor: theme.colorScheme.surfaceContainerHighest,
+      labelStyle: TextStyle(color: theme.colorScheme.onSurface),
     );
   }
 }

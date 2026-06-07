@@ -25,6 +25,17 @@ class Product {
       category: json['category'],
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'description': description,
+      'price': price,
+      'image': image,
+      'category': category,
+    };
+  }
 }
 
 class CartItem {
@@ -62,6 +73,7 @@ class User {
   final String email;
   final String phone;
   final String address;
+  final String photoPath;
 
   User({
     required this.id,
@@ -69,6 +81,7 @@ class User {
     required this.email,
     required this.phone,
     required this.address,
+    this.photoPath = '',
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -78,6 +91,18 @@ class User {
       email: json['email'] ?? '',
       phone: json['phone'] ?? '',
       address: json['address'] ?? '',
+      photoPath: json['photoPath']?.toString() ?? '',
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'email': email,
+      'phone': phone,
+      'address': address,
+      'photoPath': photoPath,
+    };
   }
 }

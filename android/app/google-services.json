@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "467115673659",
+    "firebase_url": "https://hot-dish--mad-2-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "hot-dish--mad-2",
+    "storage_bucket": "hot-dish--mad-2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:467115673659:android:3eb5132efd42e9d3d5341e",
+        "android_client_info": {
+          "package_name": "com.example.hot_dish_mobile_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAC1IlqEfae6EzXy_Aa-lAg7y0X1PpV3Bg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

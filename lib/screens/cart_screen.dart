@@ -13,15 +13,8 @@ class CartScreen extends StatefulWidget {
 
 class _CartScreenState extends State<CartScreen> {
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<AppProvider>(context, listen: false).fetchCart();
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('Shopping Cart')),
       body: Consumer<AppProvider>(
@@ -31,7 +24,39 @@ class _CartScreenState extends State<CartScreen> {
           }
 
           if (provider.cartItems.isEmpty) {
-            return const Center(child: Text('Your cart is empty.'));
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.shopping_cart_outlined,
+                      size: 72,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Your cart is empty.',
+                      style: theme.textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Tap “Menu” to browse dishes and add your first order.',
+                      style: theme.textTheme.bodyMedium,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(context).pushReplacementNamed('/');
+                      },
+                      child: const Text('Browse Menu'),
+                    ),
+                  ],
+                ),
+              ),
+            );
           }
 
           return Column(
@@ -59,15 +84,16 @@ class _CartScreenState extends State<CartScreen> {
     CartItem item,
     AppProvider provider,
   ) {
+    final theme = Theme.of(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withAlpha((0.05 * 255).round()),
+            color: theme.shadowColor.withAlpha((0.05 * 255).round()),
             blurRadius: 5,
             offset: const Offset(0, 2),
           ),
@@ -89,7 +115,7 @@ class _CartScreenState extends State<CartScreen> {
                         (context, error, stackTrace) => Container(
                           width: 80,
                           height: 80,
-                          color: Colors.grey[300],
+                          color: theme.colorScheme.surfaceContainerHighest,
                           child: const Icon(Icons.broken_image),
                         ),
                   );
@@ -107,7 +133,7 @@ class _CartScreenState extends State<CartScreen> {
                         (context, error, stackTrace) => Container(
                           width: 80,
                           height: 80,
-                          color: Colors.grey[300],
+                          color: theme.colorScheme.surfaceContainerHighest,
                           child: const Icon(Icons.fastfood),
                         ),
                   );
@@ -201,9 +227,9 @@ class _CartScreenState extends State<CartScreen> {
               IconButton(
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                 padding: EdgeInsets.zero,
-                icon: const Icon(
+                icon: Icon(
                   Icons.delete_outline,
-                  color: Colors.red,
+                  color: theme.colorScheme.error,
                   size: 18,
                 ),
                 onPressed: () async {
@@ -218,14 +244,15 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Widget _buildBottomSection(AppProvider provider) {
+    final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withAlpha((0.05 * 255).round()),
+            color: theme.shadowColor.withAlpha((0.05 * 255).round()),
             blurRadius: 10,
             offset: const Offset(0, -5),
           ),
@@ -265,12 +292,12 @@ class _CartScreenState extends State<CartScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'Total',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.darkBlue,
+                  color: theme.colorScheme.primary,
                 ),
               ),
               Text(

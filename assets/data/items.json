@@ -1,0 +1,34 @@
+[
+  {
+    "id": "1",
+    "name": "Kottu Roti",
+    "description": "Stir-fried shredded roti with vegetables and choice of meat.",
+    "price": 650.0,
+    "image": "assets/images/kottu.jpg",
+    "category": "rice-curry"
+  },
+  {
+    "id": "2",
+    "name": "Hoppers (Appa)",
+    "description": "Crispy-edged bowl-shaped pancakes served with sambol.",
+    "price": 260.0,
+    "image": "assets/images/hoppers.jpg",
+    "category": "rice-curry"
+  },
+  {
+    "id": "3",
+    "name": "String Hoppers",
+    "description": "Steamed rice noodle cakes served with coconut sambol.",
+    "price": 220.0,
+    "image": "assets/images/string_hoppers.jpg",
+    "category": "veggie"
+  },
+  {
+    "id": "4",
+    "name": "Fish Ambul Thiyal",
+    "description": "Sour fish curry - traditional coastal specialty.",
+    "price": 750.0,
+    "image": "assets/images/ambul_thiyal.jpg",
+    "category": "rice-curry"
+  }
+]

@@ -37,6 +37,7 @@ class HomeScreen extends StatelessWidget {
   }
 
   Widget _buildHeroSection(BuildContext context, bool isDark) {
+    final theme = Theme.of(context);
     final screenHeight = MediaQuery.of(context).size.height;
     final isLandscape =
         MediaQuery.of(context).orientation == Orientation.landscape;
@@ -190,7 +191,10 @@ class HomeScreen extends StatelessWidget {
                           style: TextStyle(color: Colors.white),
                         ),
                         style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Colors.white, width: 2),
+                          side: BorderSide(
+                            color: theme.colorScheme.onPrimary,
+                            width: 2,
+                          ),
                           padding: const EdgeInsets.symmetric(vertical: 16),
                         ),
                       ),
@@ -552,12 +556,12 @@ class HomeScreen extends StatelessWidget {
                 Icons.restaurant_menu,
                 color: AppColors.primaryOrange,
               ),
-              label: const Text(
+              label: Text(
                 'Browse Menu',
-                style: TextStyle(color: AppColors.primaryOrange),
+                style: TextStyle(color: theme.colorScheme.primary),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
+                backgroundColor: theme.colorScheme.onPrimary,
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
             ),

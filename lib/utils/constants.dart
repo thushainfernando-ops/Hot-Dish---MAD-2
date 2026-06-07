@@ -37,4 +37,5 @@ class AppConstants {
   static String get endpointUpdateCart => '$baseUrl/update_cart.php';
   static String get endpointRemoveFromCart => '$baseUrl/remove_from_cart.php';
   static String get endpointContact => '$baseUrl/contact.php';
+  static String get endpointOrders => '$baseUrl/orders.php';
 }

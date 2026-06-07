@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import '../utils/constants.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('About Hot Dish')),
       body: SingleChildScrollView(
@@ -17,40 +17,24 @@ class AboutScreen extends StatelessWidget {
               width: double.infinity,
               fit: BoxFit.cover,
               errorBuilder:
-                  (context, error, stackTrace) =>
-                      Container(height: 250, color: Colors.grey),
+                  (context, error, stackTrace) => Container(
+                    height: 250,
+                    color: theme.colorScheme.surfaceContainerHighest,
+                  ),
             ),
             Padding(
               padding: const EdgeInsets.all(24.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Our Story',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.darkBlue,
-                    ),
-                  ),
+                  Text('Our Story', style: theme.textTheme.headlineSmall),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'We bring authentic Sri Lankan flavors to your doorstep. Our chefs use traditional recipes and fresh ingredients to prepare delicious meals that represent Sri Lanka’s rich culinary heritage.',
-                    style: TextStyle(
-                      fontSize: 16,
-                      height: 1.6,
-                      color: AppColors.textDark,
-                    ),
+                    style: theme.textTheme.bodyLarge?.copyWith(height: 1.6),
                   ),
                   const SizedBox(height: 24),
-                  const Text(
-                    'Meet Our Team',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.darkBlue,
-                    ),
-                  ),
+                  Text('Meet Our Team', style: theme.textTheme.headlineMedium),
                   const SizedBox(height: 16),
                   GridView.count(
                     shrinkWrap: true,
@@ -59,8 +43,16 @@ class AboutScreen extends StatelessWidget {
                     crossAxisSpacing: 16,
                     mainAxisSpacing: 16,
                     children: [
-                      _buildTeamMember('assets/head-chef.jpg', 'Head Chef'),
-                      _buildTeamMember('assets/manager.jpg', 'Manager'),
+                      _buildTeamMember(
+                        context,
+                        'assets/head-chef.jpg',
+                        'Head Chef',
+                      ),
+                      _buildTeamMember(
+                        context,
+                        'assets/manager.jpg',
+                        'Manager',
+                      ),
                     ],
                   ),
                 ],
@@ -72,14 +64,15 @@ class AboutScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildTeamMember(String imagePath, String role) {
+  Widget _buildTeamMember(BuildContext context, String imagePath, String role) {
+    final theme = Theme.of(context);
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        color: Colors.white,
+        color: theme.cardColor,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withAlpha((0.1 * 255).round()),
+            color: theme.shadowColor.withAlpha((0.1 * 255).round()),
             blurRadius: 5,
           ),
         ],

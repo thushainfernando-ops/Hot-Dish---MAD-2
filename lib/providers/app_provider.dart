@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 import '../models/app_models.dart';
 import '../services/api_service.dart';
+import '../services/realtime_database_service.dart';
 
 class AppProvider with ChangeNotifier {
   final ApiService _apiService = ApiService();
@@ -19,28 +23,56 @@ class AppProvider with ChangeNotifier {
   int get selectedIndex => _selectedIndex;
 
   double get subtotal =>
-      _cartItems.fold(0, (sum, item) => sum + (item.price * item.quantity));
+      _cartItems.fold(0, (acc, item) => acc + (item.price * item.quantity));
   double get total => subtotal + 250; // Assuming fixed delivery fee of Rs. 250
+
+  StreamSubscription? _cartSubscription;
+
+  void _cancelCartSubscription() {
+    _cartSubscription?.cancel();
+    _cartSubscription = null;
+  }
+
+  String _normalizeImage(String img) {
+    final s = img.toString().trim();
+    if (s.isEmpty) return '';
+    if (s.startsWith('http')) return s;
+    if (s.startsWith('assets/')) return s;
+    return 'assets/$s';
+  }
+
+  void _subscribeToRealtimeCart(String uid) {
+    _cancelCartSubscription();
+    _cartSubscription = RealtimeDatabaseService.cartStream(uid).listen((items) {
+      _cartItems =
+          items
+              .map(
+                (c) => CartItem(
+                  id: c.id,
+                  productId: c.productId,
+                  name: c.name,
+                  price: c.price,
+                  image: _normalizeImage(c.image),
+                  quantity: c.quantity,
+                ),
+              )
+              .toList();
+      notifyListeners();
+    }, onError: (_) {});
+  }
 
   // Auth Methods
   Future<bool> login(String email, String password) async {
     _setLoading(true);
     try {
-      final result = await _apiService.login(email, password);
-      // Assuming result contains user data or token.
-      if (result['success'] == true || result['status'] == 'success') {
-        // Parse user from result or fetch profile
-        final userId =
-            result['user_id']?.toString() ?? result['id']?.toString();
-        if (userId != null) {
-          await _apiService.saveToken(
-            userId,
-          ); // store user ID as 'token' for simplicity
-          await fetchProfile();
-          return true;
-        }
+      final cred = await fb_auth.FirebaseAuth.instance
+          .signInWithEmailAndPassword(email: email.trim(), password: password);
+      final fbUser = cred.user;
+      if (fbUser != null) {
+        await fetchProfile(uid: fbUser.uid);
+        return true;
       }
-      _errorMessage = result['message'] ?? 'Login failed';
+      _errorMessage = 'Authentication failed';
       return false;
     } catch (e) {
       _errorMessage = e.toString();
@@ -51,29 +83,67 @@ class AppProvider with ChangeNotifier {
   }
 
   Future<bool> checkLoginStatus() async {
-    final token = await _apiService.getToken();
-    if (token != null) {
-      await fetchProfile();
+    final fbUser = fb_auth.FirebaseAuth.instance.currentUser;
+    if (fbUser != null) {
+      await fetchProfile(uid: fbUser.uid);
       return true;
     }
     return false;
   }
 
-  Future<void> fetchProfile() async {
-    final userId = await _apiService.getToken();
-    if (userId != null) {
-      _currentUser = await _apiService.getProfile(userId);
-      notifyListeners();
+  Future<void> fetchProfile({String? uid}) async {
+    final userId = uid ?? fb_auth.FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) return;
+    _setLoading(true);
+    try {
+      final profile = await RealtimeDatabaseService.getUserProfile(userId);
+      if (profile != null) {
+        _currentUser = profile;
+        notifyListeners();
+      } else {
+        // Try to fetch via API as a fallback
+        final apiProfile = await _apiService.getProfile(userId);
+        if (apiProfile != null) {
+          _currentUser = apiProfile;
+          notifyListeners();
+        } else {
+          // If DB and API both fail, fallback to Firebase Auth data so the profile screen
+          // still displays basic logged-in user information.
+          final authUser = fb_auth.FirebaseAuth.instance.currentUser;
+          if (authUser != null) {
+            _currentUser = User(
+              id: userId,
+              name: authUser.displayName ?? 'User',
+              email: authUser.email ?? 'Unknown',
+              phone: '',
+              address: '',
+            );
+            notifyListeners();
+          }
+        }
+      }
+      if (_currentUser != null) {
+        await fetchCart();
+        _subscribeToRealtimeCart(userId);
+      }
+    } catch (e) {
+      _errorMessage = 'Failed to load profile: $e';
+    } finally {
+      _setLoading(false);
     }
   }
 
   Future<void> logout() async {
-    final userId = await _apiService.getToken();
-    if (userId != null) {
-      await _apiService.logout(userId);
-    }
+    try {
+      await fb_auth.FirebaseAuth.instance.signOut();
+    } catch (_) {}
+    try {
+      final userId = await _apiService.getToken();
+      if (userId != null) await _apiService.logout(userId);
+    } catch (_) {}
     _currentUser = null;
     _cartItems = [];
+    _cancelCartSubscription();
     notifyListeners();
   }
 
@@ -118,7 +188,14 @@ class AppProvider with ChangeNotifier {
     if (_currentUser == null) return;
     _setLoading(true);
     try {
-      final fetched = await _apiService.getCart(_currentUser!.id);
+      // Try Realtime Database first for real-time cart
+      List<CartItem> fetched = [];
+      try {
+        fetched = await RealtimeDatabaseService.getCart(_currentUser!.id);
+      } catch (_) {
+        // fallback to API if realtime DB not available
+        fetched = await _apiService.getCart(_currentUser!.id);
+      }
 
       String normalizeImage(String img) {
         final s = img.toString().trim();
@@ -156,16 +233,37 @@ class AppProvider with ChangeNotifier {
   Future<bool> addToCart(Product product, int quantity) async {
     if (_currentUser == null) return false;
     try {
-      final success = await _apiService.addToCart(
-        _currentUser!.id,
-        product.id,
-        quantity,
-      );
-      if (success) {
-        await fetchCart(); // Refresh cart
-        return true;
+      // Update local cart immediately
+      final existing = _cartItems.indexWhere((i) => i.productId == product.id);
+      if (existing != -1) {
+        _cartItems[existing].quantity += quantity;
+      } else {
+        final newItem = CartItem(
+          id: product.id.toString(),
+          productId: product.id.toString(),
+          name: product.name,
+          price: product.price,
+          image: product.image,
+          quantity: quantity,
+        );
+        _cartItems.add(newItem);
       }
-      return false;
+      notifyListeners();
+
+      // Sync to Realtime Database; fallback to API if needed
+      try {
+        // save individual item (uses product.id as key)
+        final item = _cartItems.firstWhere((i) => i.productId == product.id);
+        await RealtimeDatabaseService.setCartItem(_currentUser!.id, item);
+      } catch (_) {
+        try {
+          await _apiService.addToCart(_currentUser!.id, product.id, quantity);
+          // refresh from API
+          await fetchCart();
+        } catch (_) {}
+      }
+
+      return true;
     } catch (e) {
       return false;
     }
@@ -183,9 +281,17 @@ class AppProvider with ChangeNotifier {
       // If logged in, attempt to sync with backend using update endpoint
       if (_currentUser != null) {
         try {
-          await _apiService.updateCart(_cartItems[itemIndex].id, newQuantity);
+          // try realtime db first
+          await RealtimeDatabaseService.setCartItem(
+            _currentUser!.id,
+            _cartItems[itemIndex],
+          );
         } catch (_) {
-          // ignore sync errors for now; local UI state preserved
+          try {
+            await _apiService.updateCart(_cartItems[itemIndex].id, newQuantity);
+          } catch (_) {
+            // ignore sync errors for now; local UI state preserved
+          }
         }
       }
 
@@ -208,9 +314,14 @@ class AppProvider with ChangeNotifier {
       // If logged in, attempt to sync removal with backend
       if (_currentUser != null) {
         try {
-          await _apiService.removeFromCart(removed.id);
+          await RealtimeDatabaseService.removeCartItem(
+            _currentUser!.id,
+            removed.id,
+          );
         } catch (_) {
-          // ignore sync errors; local UI state preserved
+          try {
+            await _apiService.removeFromCart(removed.id);
+          } catch (_) {}
         }
       }
       return true;
@@ -228,8 +339,56 @@ class AppProvider with ChangeNotifier {
         paymentDetails,
       );
       if (success) {
-        _cartItems = []; // Clear local cart
+        // Prepare order payload
+        final orderItems =
+            _cartItems
+                .map(
+                  (c) => {
+                    'id': c.id,
+                    'name': c.name,
+                    'quantity': c.quantity,
+                    'price': c.price,
+                  },
+                )
+                .toList();
+
+        final orderData = {
+          'items': orderItems,
+          'total': subtotal,
+          'status': 'pending',
+          'payment': paymentDetails,
+          'delivery_address': _currentUser?.address ?? '',
+        };
+
+        // Attempt to create order on backend (best-effort)
+        try {
+          final apiResult = await _apiService.createOrder(
+            _currentUser!.id,
+            orderData,
+          );
+          if (apiResult != null && apiResult.containsKey('order_id')) {
+            orderData['server_order_id'] = apiResult['order_id'].toString();
+          }
+        } catch (_) {}
+
+        // Save order to Realtime Database for user's history
+        try {
+          await RealtimeDatabaseService.saveOrder(_currentUser!.id, orderData);
+        } catch (_) {}
+
+        // Clear local cart and attempt to clear backend copies (Realtime DB + API fallback)
+        final previousIds = _cartItems.map((e) => e.id).toList();
+        _cartItems = [];
         notifyListeners();
+        try {
+          await RealtimeDatabaseService.clearCart(_currentUser!.id);
+        } catch (_) {}
+        // Try to remove items via API as a best-effort fallback
+        for (final id in previousIds) {
+          try {
+            await _apiService.removeFromCart(id);
+          } catch (_) {}
+        }
         return true;
       }
       return false;

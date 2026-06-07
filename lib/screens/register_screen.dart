@@ -1,5 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
+
+import '../providers/app_provider.dart';
+import '../services/realtime_database_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -16,53 +22,79 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
-  final ApiService _apiService = ApiService();
+  // ApiService not required here; registration uses Firebase
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _addressController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
+    final provider = Provider.of<AppProvider>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
     try {
-      final result = await _apiService.register(
-        _nameController.text,
-        _emailController.text,
-        _phoneController.text,
-        _addressController.text,
-        _passwordController.text,
+      // Create Firebase user
+      final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
       );
 
-      setState(() => _isLoading = false);
-
-      if (result['success'] == true || result['status'] == 'success') {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Registration successful! Please login.'),
-            ),
-          );
-          Navigator.pop(context); // Go back to login
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(result['message'] ?? 'Registration failed')),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Registration failed. Please try again.'),
+      // Save additional profile to Firestore
+      final user = cred.user;
+      if (user != null) {
+        provider.setSelectedIndex(0);
+        unawaited(
+          RealtimeDatabaseService.saveUserProfile(
+            uid: user.uid,
+            name: _nameController.text.trim(),
+            email: _emailController.text.trim(),
+            phone: _phoneController.text.trim(),
+            address: _addressController.text.trim(),
           ),
         );
+
+        unawaited(provider.fetchProfile(uid: user.uid));
+        unawaited(provider.fetchCart());
       }
+
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Registration successful! You are logged in.'),
+        ),
+      );
+      navigator.pushReplacementNamed('/home');
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(e.message ?? 'Registration failed. Please try again.'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      messenger.showSnackBar(
+        SnackBar(content: Text('Registration failed: $e')),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('Register')),
       body: SingleChildScrollView(
@@ -74,33 +106,78 @@ class _RegisterScreenState extends State<RegisterScreen> {
             children: [
               TextFormField(
                 controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Full Name'),
+                decoration: InputDecoration(
+                  labelText: 'Full Name',
+                  filled: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
                 validator: (v) => v!.isEmpty ? 'Required' : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _emailController,
-                decoration: const InputDecoration(labelText: 'Email Address'),
-                validator: (v) => v!.isEmpty ? 'Required' : null,
+                keyboardType: TextInputType.emailAddress,
+                decoration: InputDecoration(
+                  labelText: 'Email Address',
+                  filled: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return 'Required';
+                  if (!v.contains('@') || !v.contains('.')) {
+                    return 'Enter a valid email';
+                  }
+                  return null;
+                },
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _phoneController,
-                decoration: const InputDecoration(labelText: 'Phone Number'),
-                validator: (v) => v!.isEmpty ? 'Required' : null,
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  labelText: 'Phone Number',
+                  filled: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                validator:
+                    (v) => v == null || v.trim().isEmpty ? 'Required' : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _addressController,
-                decoration: const InputDecoration(labelText: 'Address'),
+                decoration: InputDecoration(
+                  labelText: 'Address',
+                  filled: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
                 validator: (v) => v!.isEmpty ? 'Required' : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _passwordController,
                 obscureText: true,
-                decoration: const InputDecoration(labelText: 'Password'),
-                validator: (v) => v!.isEmpty ? 'Required' : null,
+                decoration: InputDecoration(
+                  labelText: 'Password',
+                  filled: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                validator: (v) {
+                  if (v == null || v.isEmpty) return 'Required';
+                  if (v.trim().length < 6) {
+                    return 'Password must be 6+ characters';
+                  }
+                  return null;
+                },
               ),
               const SizedBox(height: 32),
               SizedBox(
@@ -109,7 +186,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   onPressed: _isLoading ? null : _register,
                   child:
                       _isLoading
-                          ? const CircularProgressIndicator(color: Colors.white)
+                          ? CircularProgressIndicator(
+                            color: theme.colorScheme.onPrimary,
+                          )
                           : const Text('Register'),
                 ),
               ),

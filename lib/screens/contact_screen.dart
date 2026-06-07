@@ -1,4 +1,10 @@
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
+import '../services/api_service.dart';
 
 /// Contact Screen with Mobile Form
 /// Demonstrates proper form implementation with validation
@@ -27,31 +33,109 @@ class _ContactScreenState extends State<ContactScreen> {
     super.dispose();
   }
 
+  double? _lat;
+  double? _lon;
+  bool _geocoding = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _geocodeAddress();
+  }
+
+  Future<void> _geocodeAddress() async {
+    setState(() => _geocoding = true);
+    final address = 'No 225 Walagedara Balapitiya Sri Lanka';
+    final url = Uri.parse(
+      'https://nominatim.openstreetmap.org/search?format=json&q=${Uri.encodeComponent(address)}',
+    );
+    try {
+      final res = await http
+          .get(url, headers: {'User-Agent': 'HotDishApp/1.0 (example)'})
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(res.body) as List<dynamic>?;
+        if (decoded != null && decoded.isNotEmpty) {
+          final first = decoded.first as Map<String, dynamic>;
+          final lat = double.tryParse(first['lat']?.toString() ?? '');
+          final lon = double.tryParse(first['lon']?.toString() ?? '');
+          if (lat != null && lon != null) {
+            _lat = lat;
+            _lon = lon;
+          }
+        }
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _geocoding = false);
+  }
+
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isSubmitting = true);
+    final api = ApiService();
+    final connectivity = await Connectivity().checkConnectivity();
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
 
-    // Simulate API call
-    await Future.delayed(const Duration(seconds: 2));
-
-    if (mounted) {
+    if (connectivity == ConnectivityResult.none) {
       setState(() => _isSubmitting = false);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Message sent successfully!'),
-          backgroundColor: Colors.green,
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text(
+            'No internet connection. Please try again later.',
+          ),
+          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
           behavior: SnackBarBehavior.floating,
         ),
       );
+      return;
+    }
 
-      // Clear form
-      _formKey.currentState!.reset();
-      _nameController.clear();
-      _emailController.clear();
-      _phoneController.clear();
-      _messageController.clear();
+    try {
+      final success = await api.sendContactMessage(
+        name: _nameController.text.trim(),
+        email: _emailController.text.trim(),
+        phone: _phoneController.text.trim(),
+        subject: _selectedSubject,
+        message: _messageController.text.trim(),
+      );
+
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              success
+                  ? 'Message sent successfully!'
+                  : 'Unable to send message. Please try again.',
+            ),
+            backgroundColor:
+                success
+                    ? Theme.of(context).colorScheme.secondary
+                    : Theme.of(context).colorScheme.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        if (success) {
+          _formKey.currentState!.reset();
+          _nameController.clear();
+          _emailController.clear();
+          _phoneController.clear();
+          _messageController.clear();
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Error sending message: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
@@ -198,11 +282,11 @@ class _ContactScreenState extends State<ContactScreen> {
                       onPressed: _isSubmitting ? null : _submitForm,
                       child:
                           _isSubmitting
-                              ? const SizedBox(
+                              ? SizedBox(
                                 width: 24,
                                 height: 24,
                                 child: CircularProgressIndicator(
-                                  color: Colors.white,
+                                  color: theme.colorScheme.onPrimary,
                                   strokeWidth: 2,
                                 ),
                               )
@@ -224,8 +308,175 @@ class _ContactScreenState extends State<ContactScreen> {
             _buildContactInfo(
               icon: Icons.location_on_outlined,
               title: 'Address',
-              subtitle: '123 Main Street, Colombo 00700, Sri Lanka',
+              subtitle:
+                  'No 225, Walagedara, Balapitiya, Sri Lanka (near Balapitiya Base Hospital)',
               theme: theme,
+            ),
+            const SizedBox(height: 12),
+            Card(
+              clipBehavior: Clip.hardEdge,
+              elevation: 2,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final mapUrl =
+                      (_lat != null && _lon != null)
+                          ? 'https://staticmap.openstreetmap.de/staticmap.php?center=${_lat!.toStringAsFixed(6)},${_lon!.toStringAsFixed(6)}&zoom=16&size=600x300&markers=${_lat!.toStringAsFixed(6)},${_lon!.toStringAsFixed(6)},red-pushpin'
+                          : null;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        height: 250,
+                        width: double.infinity,
+                        color: Theme.of(context).colorScheme.surface,
+                        child:
+                            _geocoding
+                                ? const Center(
+                                  child: CircularProgressIndicator(),
+                                )
+                                : (mapUrl != null)
+                                ? ClipRRect(
+                                  borderRadius: BorderRadius.zero,
+                                  child: Image.network(
+                                    mapUrl,
+                                    width: double.infinity,
+                                    height: double.infinity,
+                                    fit: BoxFit.cover,
+                                    errorBuilder:
+                                        (context, error, stack) => Center(
+                                          child: Text(
+                                            'Map preview unavailable',
+                                            style: theme.textTheme.bodyMedium,
+                                          ),
+                                        ),
+                                  ),
+                                )
+                                : Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(24.0),
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.map_outlined,
+                                          size: 48,
+                                          color: theme.colorScheme.primary,
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'Map preview unavailable',
+                                          style: theme.textTheme.bodyMedium,
+                                        ),
+                                        const SizedBox(height: 12),
+                                        ElevatedButton.icon(
+                                          onPressed: () async {
+                                            final scaffold =
+                                                ScaffoldMessenger.of(context);
+                                            final query = Uri.encodeComponent(
+                                              'No 225 Walagedara Balapitiya Sri Lanka',
+                                            );
+                                            final uri = Uri.parse(
+                                              'https://www.google.com/maps/search/?api=1&query=$query',
+                                            );
+                                            final opened = await launchUrl(
+                                              uri,
+                                              mode:
+                                                  LaunchMode
+                                                      .externalApplication,
+                                            );
+                                            if (!opened) {
+                                              scaffold.showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    'Could not open maps',
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                          },
+                                          icon: const Icon(Icons.map),
+                                          label: const Text('Open in Maps'),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'No 225, Walagedara, Balapitiya, Sri Lanka',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w500,
+                              ),
+                              softWrap: true,
+                              maxLines: 3,
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                ElevatedButton.icon(
+                                  onPressed: () async {
+                                    final scaffold = ScaffoldMessenger.of(
+                                      context,
+                                    );
+                                    final query = Uri.encodeComponent(
+                                      'No 225 Walagedara Balapitiya Sri Lanka',
+                                    );
+                                    final uri = Uri.parse(
+                                      'https://www.google.com/maps/search/?api=1&query=$query',
+                                    );
+                                    final opened = await launchUrl(
+                                      uri,
+                                      mode: LaunchMode.externalApplication,
+                                    );
+                                    if (!opened) {
+                                      scaffold.showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Could not open maps'),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                  icon: const Icon(Icons.map, size: 18),
+                                  label: const Text('Open in Maps'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: () async {
+                                    final scaffold = ScaffoldMessenger.of(
+                                      context,
+                                    );
+                                    final address =
+                                        'No 225, Walagedara, Balapitiya, Sri Lanka';
+                                    await Clipboard.setData(
+                                      ClipboardData(text: address),
+                                    );
+                                    scaffold.showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Address copied to clipboard',
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.copy_all, size: 18),
+                                  label: const Text('Copy'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
             const SizedBox(height: 12),
 

@@ -1,24 +1,99 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' as p;
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../providers/auth_riverpod.dart';
+import '../providers/connectivity_provider.dart';
+import '../services/realtime_database_service.dart';
+import '../providers/favorites_provider.dart';
 import '../providers/app_provider.dart';
 import '../utils/constants.dart';
+import 'dart:io';
+import 'order_history_screen.dart';
 
 /// Modern Profile Screen with User Details
-class ProfileScreen extends StatefulWidget {
+class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+  File? _photoFile;
+
   @override
   void initState() {
     super.initState();
-    // Fetch user profile when screen loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final provider = Provider.of<AppProvider>(context, listen: false);
+      final provider = p.Provider.of<AppProvider>(context, listen: false);
       provider.fetchProfile();
+      _loadStoredPhoto();
+    });
+  }
+
+  Future<void> _loadStoredPhoto() async {
+    final prefs = await SharedPreferences.getInstance();
+    final localPath = prefs.getString('profile_photo');
+    if (localPath != null) {
+      final savedFile = File(localPath);
+      if (await savedFile.exists()) {
+        if (!mounted) return;
+        setState(() {
+          _photoFile = savedFile;
+        });
+        return;
+      }
+    }
+
+    final authUser = ref.read(authStateChangesProvider).value;
+    if (authUser == null) return;
+
+    final dbPath = await RealtimeDatabaseService.getUserPhotoPath(authUser.uid);
+    if (dbPath != null && dbPath.isNotEmpty) {
+      final savedFile = File(dbPath);
+      if (await savedFile.exists()) {
+        if (!mounted) return;
+        setState(() {
+          _photoFile = savedFile;
+        });
+      }
+    }
+  }
+
+  Future<void> _pickPhoto() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: 1200,
+      imageQuality: 85,
+    );
+    if (picked == null) return;
+
+    final authUser = ref.read(authStateChangesProvider).value;
+    if (authUser == null) return;
+
+    final appDir = await getApplicationDocumentsDirectory();
+    final savedFile = File(
+      '${appDir.path}${Platform.pathSeparator}profile_photo_${authUser.uid}.jpg',
+    );
+    final copiedFile = await File(picked.path).copy(savedFile.path);
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('profile_photo', copiedFile.path);
+
+    await RealtimeDatabaseService.saveUserPhotoPath(
+      authUser.uid,
+      copiedFile.path,
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _photoFile = copiedFile;
     });
   }
 
@@ -27,20 +102,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
+    final authState = ref.watch(authStateChangesProvider);
+    final connectivity = ref.watch(connectivityProvider);
+    final favorites = ref.watch(favoritesProvider);
+
+    // Handle auth async state explicitly to avoid ambiguous `when` overloads
+    if (authState.isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (authState.hasError) {
+      return Scaffold(body: Center(child: Text('Auth error')));
+    }
+
+    // final user = authState.value; // not used directly here
     return Scaffold(
-      body: Consumer<AppProvider>(
+      body: p.Consumer<AppProvider>(
         builder: (context, provider, child) {
           if (provider.isLoading) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final user = provider.currentUser;
-          if (user == null) {
+          final userModel = provider.currentUser;
+          if (userModel == null) {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.person_off, size: 80, color: Colors.grey.shade400),
+                  Icon(
+                    Icons.person_off,
+                    size: 80,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                   const SizedBox(height: 16),
                   Text('No user data', style: theme.textTheme.titleLarge),
                   const SizedBox(height: 24),
@@ -72,29 +164,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          // Avatar
-                          Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 3),
-                            ),
-                            child: CircleAvatar(
-                              radius: 50,
-                              backgroundColor: AppColors.primaryOrange,
-                              child: Text(
-                                _getInitials(user.name),
-                                style: const TextStyle(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.bold,
+                          // Avatar with photo option
+                          GestureDetector(
+                            onTap: _pickPhoto,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
                                   color: Colors.white,
+                                  width: 3,
                                 ),
+                              ),
+                              child: CircleAvatar(
+                                radius: 50,
+                                backgroundColor: AppColors.primaryOrange,
+                                backgroundImage:
+                                    _photoFile != null
+                                        ? FileImage(_photoFile!)
+                                            as ImageProvider
+                                        : null,
+                                child:
+                                    _photoFile == null
+                                        ? Text(
+                                          _getInitials(userModel.name),
+                                          style: const TextStyle(
+                                            fontSize: 32,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                        : null,
                               ),
                             ),
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            user.name,
+                            userModel.name,
                             style: const TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
@@ -103,7 +209,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            user.email,
+                            userModel.email,
                             style: const TextStyle(
                               fontSize: 14,
                               color: Colors.white70,
@@ -133,7 +239,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       _buildInfoCard(
                         icon: Icons.person_outline,
                         title: 'Full Name',
-                        value: user.name,
+                        value: userModel.name,
                         theme: theme,
                         isDark: isDark,
                       ),
@@ -142,7 +248,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       _buildInfoCard(
                         icon: Icons.email_outlined,
                         title: 'Email Address',
-                        value: user.email,
+                        value: userModel.email,
                         theme: theme,
                         isDark: isDark,
                       ),
@@ -152,7 +258,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         icon: Icons.phone_outlined,
                         title: 'Phone Number',
                         value:
-                            user.phone.isNotEmpty ? user.phone : 'Not provided',
+                            userModel.phone.isNotEmpty
+                                ? userModel.phone
+                                : 'Not provided',
                         theme: theme,
                         isDark: isDark,
                       ),
@@ -162,14 +270,107 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         icon: Icons.location_on_outlined,
                         title: 'Address',
                         value:
-                            user.address.isNotEmpty
-                                ? user.address
+                            userModel.address.isNotEmpty
+                                ? userModel.address
                                 : 'Not provided',
                         theme: theme,
                         isDark: isDark,
                       ),
 
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Device & Connectivity',
+                        style: theme.textTheme.headlineMedium,
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Connectivity status
+                      connectivity.when(
+                        data: (status) {
+                          final online = status != ConnectivityResult.none;
+                          return Card(
+                            child: ListTile(
+                              leading: Icon(
+                                online ? Icons.wifi : Icons.wifi_off,
+                                color:
+                                    online
+                                        ? theme.colorScheme.secondary
+                                        : theme.colorScheme.error,
+                              ),
+                              title: const Text('Network'),
+                              subtitle: Text(
+                                online ? 'Connected' : 'No network',
+                              ),
+                              trailing: Text(
+                                online ? 'Online' : 'Offline',
+                                style: TextStyle(
+                                  color:
+                                      online
+                                          ? theme.colorScheme.secondary
+                                          : theme.colorScheme.error,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                        loading:
+                            () => const Card(
+                              child: ListTile(
+                                leading: Icon(Icons.wifi),
+                                title: Text('Network'),
+                                subtitle: Text('Checking connectivity...'),
+                              ),
+                            ),
+                        error:
+                            (_, __) => const Card(
+                              child: ListTile(
+                                leading: Icon(Icons.wifi_off),
+                                title: Text('Network'),
+                                subtitle: Text(
+                                  'Unable to determine connection',
+                                ),
+                              ),
+                            ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      const SizedBox(height: 12),
+
+                      // Favorites summary
+                      Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.favorite_outline),
+                          title: const Text('Favourites'),
+                          subtitle: Text('${favorites.length} items saved'),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.manage_accounts),
+                            onPressed: () async {
+                              // sync favorites to Firestore if user logged in
+                              final authUser =
+                                  ref.read(authStateChangesProvider).value;
+                              if (authUser != null) {
+                                final messenger = ScaffoldMessenger.maybeOf(
+                                  context,
+                                );
+                                await RealtimeDatabaseService.saveFavorites(
+                                  authUser.uid,
+                                  favorites,
+                                );
+                                if (!mounted) return;
+                                messenger?.showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Favourites synced'),
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
 
                       // Hot Dish Info
                       Text(
@@ -233,6 +434,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       const SizedBox(height: 12),
 
                       _buildActionButton(
+                        icon: Icons.receipt_long,
+                        title: 'Orders History',
+                        subtitle: 'View past orders and details',
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const OrderHistoryScreen(),
+                            ),
+                          );
+                        },
+                        theme: theme,
+                        isDark: isDark,
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Device Info and Backend Demo removed per request
+                      _buildActionButton(
                         icon: Icons.description_outlined,
                         title: 'Terms & Privacy',
                         subtitle: 'View our terms and conditions',
@@ -275,7 +493,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                         onPressed:
                                             () => Navigator.pop(context, true),
                                         style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.red,
+                                          backgroundColor:
+                                              theme.colorScheme.error,
                                         ),
                                         child: const Text('Logout'),
                                       ),
@@ -284,6 +503,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             );
 
                             if (confirm == true && context.mounted) {
+                              // Sign out Firebase and app provider
+                              await FirebaseAuth.instance.signOut();
                               await provider.logout();
                               if (context.mounted) {
                                 Navigator.pushReplacementNamed(
@@ -293,13 +514,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               }
                             }
                           },
-                          icon: const Icon(Icons.logout, color: Colors.red),
-                          label: const Text(
+                          icon: Icon(
+                            Icons.logout,
+                            color: theme.colorScheme.error,
+                          ),
+                          label: Text(
                             'Logout',
-                            style: TextStyle(color: Colors.red),
+                            style: TextStyle(color: theme.colorScheme.error),
                           ),
                           style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Colors.red, width: 2),
+                            side: BorderSide(
+                              color: theme.colorScheme.error,
+                              width: 2,
+                            ),
                           ),
                         ),
                       ),
@@ -310,8 +537,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ],
           );
-        },
-      ),
+        }, // builder
+      ), // p.Consumer
     );
   }
 

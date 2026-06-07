@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import '../utils/constants.dart';
 
 class OrderSuccessScreen extends StatelessWidget {
   const OrderSuccessScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       body: Center(
         child: Padding(
@@ -13,25 +13,24 @@ class OrderSuccessScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.check_circle, color: Colors.green, size: 100),
+              Icon(
+                Icons.check_circle,
+                color: theme.colorScheme.secondary,
+                size: 100,
+              ),
               const SizedBox(height: 24),
-              const Text(
+              Text(
                 'Order Successful!',
-                style: TextStyle(
-                  fontSize: 28,
+                style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
-                  color: AppColors.darkBlue,
+                  color: theme.colorScheme.primary,
                 ),
               ),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 'Thank you for your order. Your delicious food is being prepared and will be delivered soon.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: AppColors.textLight,
-                  height: 1.5,
-                ),
+                style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
               ),
               const SizedBox(height: 48),
               SizedBox(

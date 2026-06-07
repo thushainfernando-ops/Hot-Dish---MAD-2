@@ -160,4 +160,69 @@ class ApiService {
     await clearToken();
     return true;
   }
+
+  Future<bool> sendContactMessage({
+    required String name,
+    required String email,
+    required String phone,
+    required String subject,
+    required String message,
+  }) async {
+    final result = await post(AppConstants.endpointContact, {
+      'name': name,
+      'email': email,
+      'phone': phone,
+      'subject': subject,
+      'message': message,
+    });
+
+    return result['success'] == true || result['status'] == 'success';
+  }
+
+  Future<List<dynamic>> getOrders(String userId) async {
+    try {
+      final result = await post(AppConstants.endpointOrders, {
+        'user_id': userId,
+      });
+      if (result is List) return result;
+      if (result is Map && result.containsKey('orders'))
+        return result['orders'] as List<dynamic>;
+      // If wrapper contains data
+      if (result is Map && result.containsKey('data'))
+        return result['data'] as List<dynamic>;
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>?> createOrder(
+    String userId,
+    Map<String, dynamic> orderData,
+  ) async {
+    try {
+      final payload = {'user_id': userId, ...orderData};
+      final result = await post(AppConstants.endpointOrders, payload);
+      if (result is Map<String, dynamic>) return result;
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<bool> updateOrder(
+    String orderId,
+    Map<String, dynamic> orderData,
+  ) async {
+    try {
+      final payload = {'order_id': orderId, ...orderData};
+      final result = await post(AppConstants.endpointOrders, payload);
+      if (result is Map) {
+        return result['success'] == true || result['status'] == 'success';
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
 }

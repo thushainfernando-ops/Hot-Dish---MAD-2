@@ -8,6 +8,7 @@ class DetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       body: CustomScrollView(
         slivers: [
@@ -17,9 +18,9 @@ class DetailScreen extends StatelessWidget {
             flexibleSpace: FlexibleSpaceBar(
               title: Text(
                 item.name,
-                style: const TextStyle(
-                  shadows: [Shadow(color: Colors.black, blurRadius: 4)],
-                  color: Colors.white,
+                style: TextStyle(
+                  shadows: [Shadow(color: theme.shadowColor, blurRadius: 4)],
+                  color: theme.colorScheme.onPrimary,
                 ),
               ),
               background: Hero(
@@ -29,8 +30,12 @@ class DetailScreen extends StatelessWidget {
                   fit: BoxFit.cover,
                   errorBuilder:
                       (context, error, stackTrace) => Container(
-                        color: Colors.grey,
-                        child: const Icon(Icons.broken_image, size: 50),
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        child: Icon(
+                          Icons.broken_image,
+                          size: 50,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
                 ),
               ),

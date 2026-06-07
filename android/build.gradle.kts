@@ -1,3 +1,16 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.google.gms:google-services:4.4.0")
+    }
+}
+
+// Provide kotlin_version for plugins that expect the Groovy `ext.kotlin_version` property
+extra["kotlin_version"] = "1.8.22"
+
 allprojects {
     repositories {
         google()
