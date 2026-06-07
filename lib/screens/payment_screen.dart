@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
 import '../utils/constants.dart';
+import '../services/geolocation_service.dart';
 
 /// Payment Screen with Card Payment and Cash on Delivery
 class PaymentScreen extends StatefulWidget {
@@ -19,9 +20,18 @@ class _PaymentScreenState extends State<PaymentScreen> {
   final _expiryController = TextEditingController();
   final _cvvController = TextEditingController();
   final _cardHolderController = TextEditingController();
+  final _addressController = TextEditingController();
 
   String _paymentMethod = 'card'; // 'card' or 'cod'
   bool _isProcessing = false;
+  bool _isGettingLocation = false;
+
+  // Location data
+  double? _userLatitude;
+  double? _userLongitude;
+  double? _distanceKm;
+  int? _estimatedDeliveryMinutes;
+  String _locationStatus = 'Not fetched';
 
   @override
   void dispose() {
@@ -29,11 +39,62 @@ class _PaymentScreenState extends State<PaymentScreen> {
     _expiryController.dispose();
     _cvvController.dispose();
     _cardHolderController.dispose();
+    _addressController.dispose();
     super.dispose();
   }
 
+  /// Fetch current location and calculate delivery info
+  Future<void> _useMyLocation() async {
+    setState(() => _isGettingLocation = true);
+
+    final deliveryInfo = await GeolocationService.getDeliveryInfo();
+
+    if (!mounted) return;
+
+    if (deliveryInfo != null) {
+      setState(() {
+        _userLatitude = deliveryInfo['latitude'];
+        _userLongitude = deliveryInfo['longitude'];
+        _distanceKm = deliveryInfo['distance_km'];
+        _estimatedDeliveryMinutes = deliveryInfo['estimated_minutes'];
+        _locationStatus =
+            'Location: ${deliveryInfo['distance_formatted']} from restaurant';
+        _addressController.text =
+            '${_userLatitude?.toStringAsFixed(4)}, ${_userLongitude?.toStringAsFixed(4)}';
+        _isGettingLocation = false;
+      });
+
+      // Show snackbar with delivery info
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Distance: ${deliveryInfo['distance_formatted']} | Estimated: ${deliveryInfo['estimated_minutes']} min',
+          ),
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else {
+      setState(() {
+        _locationStatus = 'Failed to get location';
+        _isGettingLocation = false;
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Unable to get location. Please enable location services and grant permission.',
+          ),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
   Future<void> _processPayment() async {
-    if (_paymentMethod == 'card' && !_formKey.currentState!.validate()) {
+    if (!_formKey.currentState!.validate()) {
       return;
     }
 
@@ -43,6 +104,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
     final paymentDetails = {
       'payment_method': _paymentMethod,
+      'delivery_address': _addressController.text.trim(),
+      if (_userLatitude != null && _userLongitude != null) ...{
+        'latitude': _userLatitude.toString(),
+        'longitude': _userLongitude.toString(),
+        'distance_km': _distanceKm.toString(),
+        'estimated_delivery_minutes': _estimatedDeliveryMinutes.toString(),
+      },
       if (_paymentMethod == 'card') ...{
         'card_number': _cardNumberController.text,
         'expiry': _expiryController.text,
@@ -107,52 +175,188 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 ),
                 const SizedBox(height: 32),
 
-                // Payment Method Selection
-                Text('Payment Method', style: theme.textTheme.headlineMedium),
+                // Delivery Address Section with GPS
+                Text('Delivery Address', style: theme.textTheme.headlineMedium),
                 const SizedBox(height: 16),
 
-                // Card Payment Option
+                // GPS Location Card
                 Card(
-                  child: RadioListTile<String>(
-                    value: 'card',
-                    groupValue: _paymentMethod,
-                    onChanged:
-                        (value) => setState(() => _paymentMethod = value!),
-                    title: const Text('Credit/Debit Card'),
-                    subtitle: const Text('Pay securely with your card'),
-                    secondary: const Icon(
-                      Icons.credit_card,
-                      color: AppColors.primaryOrange,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // Cash on Delivery Option
-                Card(
-                  child: RadioListTile<String>(
-                    value: 'cod',
-                    groupValue: _paymentMethod,
-                    onChanged:
-                        (value) => setState(() => _paymentMethod = value!),
-                    title: const Text('Cash on Delivery'),
-                    subtitle: const Text('Pay when you receive your order'),
-                    secondary: const Icon(
-                      Icons.money,
-                      color: AppColors.primaryOrange,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 32),
-
-                // Card Payment Form (shown only if card is selected)
-                if (_paymentMethod == 'card') ...[
-                  Text('Card Details', style: theme.textTheme.headlineMedium),
-                  const SizedBox(height: 16),
-                  Form(
-                    key: _formKey,
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'GPS Location',
+                                    style: theme.textTheme.titleMedium,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _locationStatus,
+                                    style: theme.textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            ElevatedButton.icon(
+                              onPressed:
+                                  _isGettingLocation ? null : _useMyLocation,
+                              icon: _isGettingLocation
+                                  ? SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: theme
+                                            .colorScheme.onPrimaryContainer,
+                                      ),
+                                    )
+                                  : const Icon(Icons.location_on, size: 18),
+                              label: const Text('Use My Location'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primaryOrange,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_distanceKm != null &&
+                            _estimatedDeliveryMinutes != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12.0),
+                            child: Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
+                              children: [
+                                Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Distance',
+                                      style: theme.textTheme.bodySmall,
+                                    ),
+                                    Text(
+                                      GeolocationService.formatDistance(
+                                        _distanceKm!,
+                                      ),
+                                      style: theme.textTheme.titleSmall
+                                          ?.copyWith(
+                                        color: AppColors.primaryOrange,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Est. Delivery',
+                                      style: theme.textTheme.bodySmall,
+                                    ),
+                                    Text(
+                                      '${_estimatedDeliveryMinutes} min',
+                                      style: theme.textTheme.titleSmall
+                                          ?.copyWith(
+                                        color: Colors.green,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Form for address and card details
+                Form(
+                  key: _formKey,
+                  child: Column(
+                    children: [
+                      // Address TextField
+                      TextFormField(
+                        controller: _addressController,
+                        decoration: InputDecoration(
+                          labelText: 'Delivery Address',
+                          hintText: 'Enter or use GPS to auto-fill',
+                          prefixIcon: const Icon(Icons.location_on_outlined),
+                          filled: true,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        maxLines: 2,
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please enter delivery address or use GPS';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 32),
+
+                      // Payment Method Selection
+                      Text('Payment Method',
+                          style: theme.textTheme.headlineMedium),
+                      const SizedBox(height: 16),
+
+                      // Card Payment Option
+                      Card(
+                        child: RadioListTile<String>(
+                          value: 'card',
+                          groupValue: _paymentMethod,
+                          onChanged: (value) =>
+                              setState(() => _paymentMethod = value!),
+                          title: const Text('Credit/Debit Card'),
+                          subtitle:
+                              const Text('Pay securely with your card'),
+                          secondary: const Icon(
+                            Icons.credit_card,
+                            color: AppColors.primaryOrange,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Cash on Delivery Option
+                      Card(
+                        child: RadioListTile<String>(
+                          value: 'cod',
+                          groupValue: _paymentMethod,
+                          onChanged: (value) =>
+                              setState(() => _paymentMethod = value!),
+                          title: const Text('Cash on Delivery'),
+                          subtitle: const Text(
+                              'Pay when you receive your order'),
+                          secondary: const Icon(
+                            Icons.money,
+                            color: AppColors.primaryOrange,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+
+                      // Card Payment Form (shown only if card is selected)
+                      if (_paymentMethod == 'card') ...[
+                        Text('Card Details',
+                            style: theme.textTheme.headlineMedium),
+                        const SizedBox(height: 16),
+
                         // Card Number
                         TextFormField(
                           controller: _cardNumberController,
@@ -176,7 +380,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                               return 'Please enter card number';
                             }
                             final digits = value.replaceAll(' ', '');
-                            if (digits.length < 13 || digits.length > 19) {
+                            if (digits.length < 13 ||
+                                digits.length > 19) {
                               return 'Invalid card number';
                             }
                             if (!_luhnCheck(digits)) {
@@ -196,10 +401,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                 decoration: InputDecoration(
                                   labelText: 'Expiry Date',
                                   hintText: 'MM/YY',
-                                  prefixIcon: const Icon(Icons.calendar_today),
+                                  prefixIcon:
+                                      const Icon(Icons.calendar_today),
                                   filled: true,
                                   border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                                    borderRadius:
+                                        BorderRadius.circular(12),
                                   ),
                                 ),
                                 keyboardType: TextInputType.number,
@@ -212,9 +419,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   if (value == null || value.isEmpty) {
                                     return 'Required';
                                   }
-                                  if (!RegExp(
-                                    r'^\d{2}/\d{2}$',
-                                  ).hasMatch(value)) {
+                                  if (!RegExp(r'^\d{2}/\d{2}$')
+                                      .hasMatch(value)) {
                                     return 'Invalid format';
                                   }
                                   final parts = value.split('/');
@@ -223,7 +429,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   if (month < 1 || month > 12) {
                                     return 'Invalid month';
                                   }
-                                  // Convert YY to 2000+YY (assume cards won't be > 2100)
                                   final fourYear = 2000 + year;
                                   final lastDay = DateTime(
                                     fourYear,
@@ -250,7 +455,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   prefixIcon: const Icon(Icons.lock),
                                   filled: true,
                                   border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                                    borderRadius:
+                                        BorderRadius.circular(12),
                                   ),
                                 ),
                                 keyboardType: TextInputType.number,
@@ -286,7 +492,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          textCapitalization: TextCapitalization.characters,
+                          textCapitalization:
+                              TextCapitalization.characters,
                           validator: (value) {
                             if (value == null || value.isEmpty) {
                               return 'Please enter card holder name';
@@ -297,11 +504,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             return null;
                           },
                         ),
+                        const SizedBox(height: 32),
                       ],
-                    ),
+                    ],
                   ),
-                  const SizedBox(height: 32),
-                ],
+                ),
 
                 // Pay Button
                 SizedBox(
@@ -309,21 +516,20 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   height: 56,
                   child: ElevatedButton(
                     onPressed: _isProcessing ? null : _processPayment,
-                    child:
-                        _isProcessing
-                            ? SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                color: theme.colorScheme.onPrimary,
-                                strokeWidth: 2,
-                              ),
-                            )
-                            : Text(
-                              _paymentMethod == 'card'
-                                  ? 'Pay Rs. ${provider.total.toStringAsFixed(2)}'
-                                  : 'Place Order',
+                    child: _isProcessing
+                        ? SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              color: theme.colorScheme.onPrimary,
+                              strokeWidth: 2,
                             ),
+                          )
+                        : Text(
+                            _paymentMethod == 'card'
+                                ? 'Pay Rs. ${provider.total.toStringAsFixed(2)}'
+                                : 'Place Order',
+                          ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -364,94 +570,92 @@ class _PaymentScreenState extends State<PaymentScreen> {
       children: [
         Text(
           label,
-          style:
-              isTotal
-                  ? theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  )
-                  : theme.textTheme.bodyLarge,
+          style: isTotal
+              ? theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                )
+              : theme.textTheme.bodyLarge,
         ),
         Text(
           'Rs. ${amount.toStringAsFixed(2)}',
-          style:
-              isTotal
-                  ? theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primaryOrange,
-                  )
-                  : theme.textTheme.bodyLarge,
+          style: isTotal
+              ? theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primaryOrange,
+                )
+              : theme.textTheme.bodyLarge,
         ),
       ],
     );
   }
-}
 
-bool _luhnCheck(String digits) {
-  int sum = 0;
-  bool alternate = false;
-  for (int i = digits.length - 1; i >= 0; i--) {
-    int n = int.parse(digits[i]);
-    if (alternate) {
-      n *= 2;
-      if (n > 9) n -= 9;
+  bool _luhnCheck(String cardNumber) {
+    int sum = 0;
+    bool isEven = false;
+
+    for (int i = cardNumber.length - 1; i >= 0; i--) {
+      int digit = int.parse(cardNumber[i]);
+
+      if (isEven) {
+        digit *= 2;
+        if (digit > 9) {
+          digit -= 9;
+        }
+      }
+
+      sum += digit;
+      isEven = !isEven;
     }
-    sum += n;
-    alternate = !alternate;
+
+    return sum % 10 == 0;
   }
-  return sum % 10 == 0;
 }
 
-// Card Number Formatter (adds spaces every 4 digits)
 class _CardNumberInputFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    if (newValue.text.isEmpty) {
+      return newValue;
+    }
+
     final text = newValue.text.replaceAll(' ', '');
     final buffer = StringBuffer();
+
     for (int i = 0; i < text.length; i++) {
-      buffer.write(text[i]);
-      if ((i + 1) % 4 == 0 && i + 1 != text.length) {
+      if (i > 0 && i % 4 == 0) {
         buffer.write(' ');
       }
+      buffer.write(text[i]);
     }
-    final string = buffer.toString();
+
     return TextEditingValue(
-      text: string,
-      selection: TextSelection.collapsed(offset: string.length),
+      text: buffer.toString(),
+      selection: TextSelection.collapsed(offset: buffer.length),
     );
   }
 }
 
-// Expiry Date Formatter (adds / after MM)
 class _ExpiryDateInputFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final text = newValue.text.replaceAll('/', '');
-
-    if (text.isEmpty) {
-      return newValue.copyWith(text: '');
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    if (newValue.text.isEmpty) {
+      return newValue;
     }
 
-    if (text.length >= 2) {
-      final month = text.substring(0, 2);
-      final year =
-          text.length > 2 ? text.substring(2, min(4, text.length)) : '';
-
-      final formatted = year.isEmpty ? '$month/' : '$month/$year';
+    final text = newValue.text.replaceAll('/', '');
+    if (text.length <= 2) {
       return TextEditingValue(
-        text: formatted,
-        selection: TextSelection.collapsed(offset: formatted.length),
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
       );
     }
 
     return TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
+      text: '${text.substring(0, 2)}/${text.substring(2, min(4, text.length))}',
+      selection: TextSelection.collapsed(
+          offset: min(5, '${text.substring(0, 2)}/${text.substring(2, min(4, text.length))}'.length)),
     );
   }
 }
