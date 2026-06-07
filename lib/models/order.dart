@@ -85,11 +85,18 @@ class Order {
     final statusString =
         (json['status'] ?? json['order_status'] ?? '').toString().toLowerCase();
     OrderStatus status = OrderStatus.pending;
-    if (statusString.contains('deliver')) status = OrderStatus.delivered;
-    if (statusString.contains('cancel')) status = OrderStatus.cancelled;
-    if (statusString.contains('prepare')) status = OrderStatus.preparing;
-    if (statusString.contains('on') || statusString.contains('delivery'))
+    if (statusString.contains('deliver')) {
+      status = OrderStatus.delivered;
+    }
+    if (statusString.contains('cancel')) {
+      status = OrderStatus.cancelled;
+    }
+    if (statusString.contains('prepare')) {
+      status = OrderStatus.preparing;
+    }
+    if (statusString.contains('on') || statusString.contains('delivery')) {
       status = OrderStatus.onDelivery;
+    }
 
     DateTime date = DateTime.now();
     try {
@@ -98,7 +105,9 @@ class Order {
       } else if (json['created_at'] != null) {
         date = DateTime.parse(json['created_at'].toString());
       }
-    } catch (_) {}
+    } catch (_) {
+      // ignore parsing failures and keep current date
+    }
 
     return Order(
       id: json['id']?.toString() ?? json['order_id']?.toString() ?? '',

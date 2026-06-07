@@ -55,10 +55,13 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
       appBar: AppBar(title: const Text('Orders History')),
       body: Consumer<OrdersProvider>(
         builder: (context, provider, child) {
-          if (provider.loading)
+          if (provider.loading) {
             return const Center(child: CircularProgressIndicator());
+          }
           final orders = provider.orders;
-          if (orders.isEmpty) return const Center(child: Text('No orders yet'));
+          if (orders.isEmpty) {
+            return const Center(child: Text('No orders yet'));
+          }
           return ListView.separated(
             padding: const EdgeInsets.all(16),
             itemCount: orders.length,

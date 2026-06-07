@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart' as riverpod;
 import 'package:provider/provider.dart';
 import 'package:badges/badges.dart' as badges;
 import '../providers/app_provider.dart';
-import '../providers/menu_provider.dart';
 import '../providers/connectivity_provider.dart';
 import 'home_screen.dart';
 import 'menu_screen.dart';
@@ -44,14 +43,8 @@ class _MainScaffoldState extends State<MainScaffold> {
       final provider = Provider.of<AppProvider>(context, listen: false);
       _appProvider = provider;
       provider.fetchProfile();
-      provider.fetchCart();
-      // prefetch menu so navigation feels faster
-      try {
-        riverpod.ProviderScope.containerOf(
-          context,
-          listen: false,
-        ).read(menuProvider.notifier).loadMenu();
-      } catch (_) {}
+      // provider.fetchCart() is already called inside fetchProfile(), so
+      // avoid duplicate cart loading on startup.
       // listen for programmatic navigation requests
       provider.addListener(_providerNavigationListener);
       _providerListenerAdded = true;

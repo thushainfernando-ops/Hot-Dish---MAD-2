@@ -59,8 +59,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
         _estimatedDeliveryMinutes = deliveryInfo['estimated_minutes'];
         _locationStatus =
             'Location: ${deliveryInfo['distance_formatted']} from restaurant';
-        _addressController.text =
-            '${_userLatitude?.toStringAsFixed(4)}, ${_userLongitude?.toStringAsFixed(4)}';
+        // Prefer human-readable address if reverse geocoding succeeded
+        final addr = deliveryInfo['address'] as String?;
+        if (addr != null && addr.isNotEmpty) {
+          _addressController.text = addr;
+        } else {
+          _addressController.text =
+              '${_userLatitude?.toStringAsFixed(4)}, ${_userLongitude?.toStringAsFixed(4)}';
+        }
         _isGettingLocation = false;
       });
 
@@ -209,17 +215,20 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             ElevatedButton.icon(
                               onPressed:
                                   _isGettingLocation ? null : _useMyLocation,
-                              icon: _isGettingLocation
-                                  ? SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: theme
-                                            .colorScheme.onPrimaryContainer,
-                                      ),
-                                    )
-                                  : const Icon(Icons.location_on, size: 18),
+                              icon:
+                                  _isGettingLocation
+                                      ? SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color:
+                                              theme
+                                                  .colorScheme
+                                                  .onPrimaryContainer,
+                                        ),
+                                      )
+                                      : const Icon(Icons.location_on, size: 18),
                               label: const Text('Use My Location'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: AppColors.primaryOrange,
@@ -233,12 +242,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
                           Padding(
                             padding: const EdgeInsets.only(top: 12.0),
                             child: Row(
-                              mainAxisAlignment:
-                                  MainAxisAlignment.spaceBetween,
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       'Distance',
@@ -250,27 +257,26 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                       ),
                                       style: theme.textTheme.titleSmall
                                           ?.copyWith(
-                                        color: AppColors.primaryOrange,
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                                            color: AppColors.primaryOrange,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                     ),
                                   ],
                                 ),
                                 Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       'Est. Delivery',
                                       style: theme.textTheme.bodySmall,
                                     ),
                                     Text(
-                                      '${_estimatedDeliveryMinutes} min',
+                                      ' min',
                                       style: theme.textTheme.titleSmall
                                           ?.copyWith(
-                                        color: Colors.green,
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                                            color: Colors.green,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                     ),
                                   ],
                                 ),
@@ -311,8 +317,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       const SizedBox(height: 32),
 
                       // Payment Method Selection
-                      Text('Payment Method',
-                          style: theme.textTheme.headlineMedium),
+                      Text(
+                        'Payment Method',
+                        style: theme.textTheme.headlineMedium,
+                      ),
                       const SizedBox(height: 16),
 
                       // Card Payment Option
@@ -320,11 +328,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         child: RadioListTile<String>(
                           value: 'card',
                           groupValue: _paymentMethod,
-                          onChanged: (value) =>
-                              setState(() => _paymentMethod = value!),
+                          onChanged:
+                              (value) =>
+                                  setState(() => _paymentMethod = value!),
                           title: const Text('Credit/Debit Card'),
-                          subtitle:
-                              const Text('Pay securely with your card'),
+                          subtitle: const Text('Pay securely with your card'),
                           secondary: const Icon(
                             Icons.credit_card,
                             color: AppColors.primaryOrange,
@@ -338,11 +346,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         child: RadioListTile<String>(
                           value: 'cod',
                           groupValue: _paymentMethod,
-                          onChanged: (value) =>
-                              setState(() => _paymentMethod = value!),
+                          onChanged:
+                              (value) =>
+                                  setState(() => _paymentMethod = value!),
                           title: const Text('Cash on Delivery'),
                           subtitle: const Text(
-                              'Pay when you receive your order'),
+                            'Pay when you receive your order',
+                          ),
                           secondary: const Icon(
                             Icons.money,
                             color: AppColors.primaryOrange,
@@ -353,8 +363,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
                       // Card Payment Form (shown only if card is selected)
                       if (_paymentMethod == 'card') ...[
-                        Text('Card Details',
-                            style: theme.textTheme.headlineMedium),
+                        Text(
+                          'Card Details',
+                          style: theme.textTheme.headlineMedium,
+                        ),
                         const SizedBox(height: 16),
 
                         // Card Number
@@ -380,8 +392,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                               return 'Please enter card number';
                             }
                             final digits = value.replaceAll(' ', '');
-                            if (digits.length < 13 ||
-                                digits.length > 19) {
+                            if (digits.length < 13 || digits.length > 19) {
                               return 'Invalid card number';
                             }
                             if (!_luhnCheck(digits)) {
@@ -401,12 +412,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                 decoration: InputDecoration(
                                   labelText: 'Expiry Date',
                                   hintText: 'MM/YY',
-                                  prefixIcon:
-                                      const Icon(Icons.calendar_today),
+                                  prefixIcon: const Icon(Icons.calendar_today),
                                   filled: true,
                                   border: OutlineInputBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(12),
+                                    borderRadius: BorderRadius.circular(12),
                                   ),
                                 ),
                                 keyboardType: TextInputType.number,
@@ -419,8 +428,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   if (value == null || value.isEmpty) {
                                     return 'Required';
                                   }
-                                  if (!RegExp(r'^\d{2}/\d{2}$')
-                                      .hasMatch(value)) {
+                                  if (!RegExp(
+                                    r'^\d{2}/\d{2}$',
+                                  ).hasMatch(value)) {
                                     return 'Invalid format';
                                   }
                                   final parts = value.split('/');
@@ -455,8 +465,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   prefixIcon: const Icon(Icons.lock),
                                   filled: true,
                                   border: OutlineInputBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(12),
+                                    borderRadius: BorderRadius.circular(12),
                                   ),
                                 ),
                                 keyboardType: TextInputType.number,
@@ -492,8 +501,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          textCapitalization:
-                              TextCapitalization.characters,
+                          textCapitalization: TextCapitalization.characters,
                           validator: (value) {
                             if (value == null || value.isEmpty) {
                               return 'Please enter card holder name';
@@ -516,20 +524,21 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   height: 56,
                   child: ElevatedButton(
                     onPressed: _isProcessing ? null : _processPayment,
-                    child: _isProcessing
-                        ? SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              color: theme.colorScheme.onPrimary,
-                              strokeWidth: 2,
+                    child:
+                        _isProcessing
+                            ? SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                color: theme.colorScheme.onPrimary,
+                                strokeWidth: 2,
+                              ),
+                            )
+                            : Text(
+                              _paymentMethod == 'card'
+                                  ? 'Pay Rs. ${provider.total.toStringAsFixed(2)}'
+                                  : 'Place Order',
                             ),
-                          )
-                        : Text(
-                            _paymentMethod == 'card'
-                                ? 'Pay Rs. ${provider.total.toStringAsFixed(2)}'
-                                : 'Place Order',
-                          ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -570,20 +579,22 @@ class _PaymentScreenState extends State<PaymentScreen> {
       children: [
         Text(
           label,
-          style: isTotal
-              ? theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                )
-              : theme.textTheme.bodyLarge,
+          style:
+              isTotal
+                  ? theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  )
+                  : theme.textTheme.bodyLarge,
         ),
         Text(
           'Rs. ${amount.toStringAsFixed(2)}',
-          style: isTotal
-              ? theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primaryOrange,
-                )
-              : theme.textTheme.bodyLarge,
+          style:
+              isTotal
+                  ? theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primaryOrange,
+                  )
+                  : theme.textTheme.bodyLarge,
         ),
       ],
     );
@@ -614,7 +625,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
 class _CardNumberInputFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
-      TextEditingValue oldValue, TextEditingValue newValue) {
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
     if (newValue.text.isEmpty) {
       return newValue;
     }
@@ -639,7 +652,9 @@ class _CardNumberInputFormatter extends TextInputFormatter {
 class _ExpiryDateInputFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
-      TextEditingValue oldValue, TextEditingValue newValue) {
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
     if (newValue.text.isEmpty) {
       return newValue;
     }
@@ -655,7 +670,13 @@ class _ExpiryDateInputFormatter extends TextInputFormatter {
     return TextEditingValue(
       text: '${text.substring(0, 2)}/${text.substring(2, min(4, text.length))}',
       selection: TextSelection.collapsed(
-          offset: min(5, '${text.substring(0, 2)}/${text.substring(2, min(4, text.length))}'.length)),
+        offset: min(
+          5,
+          '${text.substring(0, 2)}/${text.substring(2, min(4, text.length))}'
+              .length,
+        ),
+      ),
     );
   }
 }
+

@@ -1,5 +1,7 @@
 import 'package:geolocator/geolocator.dart';
 import 'dart:math';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class GeolocationService {
   GeolocationService._();
@@ -36,7 +38,6 @@ class GeolocationService {
       );
       return position;
     } catch (e) {
-      print('Error getting location: $e');
       return null;
     }
   }
@@ -49,12 +50,10 @@ class GeolocationService {
     double lon2,
   ) {
     const p = 0.017453292519943295; // Math.PI / 180
-    final a = 0.5 -
+    final a =
+        0.5 -
         cos((lat2 - lat1) * p) / 2 +
-        cos(lat1 * p) *
-            cos(lat2 * p) *
-            (1 - cos((lon2 - lon1) * p)) /
-            2;
+        cos(lat1 * p) * cos(lat2 * p) * (1 - cos((lon2 - lon1) * p)) / 2;
     return 12742 * asin(sqrt(a)); // 2 * R; R = 6371 km
   }
 
@@ -65,8 +64,7 @@ class GeolocationService {
     const preparationTimeMinutes = 10;
 
     // Calculate travel time
-    final travelTimeMinutes =
-        (distanceKm / averageSpeedKmPerHour * 60).ceil();
+    final travelTimeMinutes = (distanceKm / averageSpeedKmPerHour * 60).ceil();
 
     // Total time = preparation + travel
     return preparationTimeMinutes + travelTimeMinutes;
@@ -77,6 +75,32 @@ class GeolocationService {
   /// In production, you'd use a reverse geocoding API
   static String formatCoordinates(double lat, double lon) {
     return '$lat, $lon';
+  }
+
+  /// Reverse geocode coordinates to a human-readable address using Nominatim
+  static Future<String?> getAddressFromCoordinates(
+    double lat,
+    double lon,
+  ) async {
+    try {
+      final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=$lat&lon=$lon',
+      );
+      final response = await http.get(
+        uri,
+        headers: {'User-Agent': 'HotDishApp/1.0 (youremail@example.com)'},
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        final displayName = data['display_name'] as String?;
+        if (displayName != null && displayName.isNotEmpty) {
+          return displayName;
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Format distance for display
@@ -101,6 +125,10 @@ class GeolocationService {
       );
 
       final estimatedTime = estimateDeliveryTime(distance);
+      final address = await getAddressFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
 
       return {
         'latitude': position.latitude,
@@ -110,9 +138,9 @@ class GeolocationService {
         'estimated_minutes': estimatedTime,
         'restaurant_lat': restaurantLat,
         'restaurant_lon': restaurantLon,
+        'address': address,
       };
     } catch (e) {
-      print('Error getting delivery info: $e');
       return null;
     }
   }
